@@ -1,0 +1,558 @@
+<title>Odoo HQ</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: full-bleed 3D building, glass HUD floating at the top and bottom, one bottom sheet for details. */
+:root{
+  --bg:#0e1130; --panel:rgba(20,24,64,.84); --panel-solid:#171b48; --fg:#eef0ff; --muted:#a6abd8;
+  --line:rgba(170,180,255,.22); --accent:#d7a6cc; --accent-strong:#714B67;
+  --ok:#34d399; --idle:#9aa3c7; --done:#60a5fa; --err:#fb7185;
+  --display:"Bricolage Grotesque","IBM Plex Sans Arabic",system-ui,sans-serif;
+  --body:"IBM Plex Sans Arabic",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  color-scheme:dark;
+}
+body.day{
+  --bg:#dce7f3; --panel:rgba(255,255,255,.88); --panel-solid:#ffffff; --fg:#1c2042; --muted:#5a5f86;
+  --line:rgba(40,50,110,.16); --accent:#714B67; --accent-strong:#714B67;
+  --ok:#059669; --idle:#6b7398; --done:#2563eb; --err:#e11d48;
+  color-scheme:light;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);overflow:hidden;-webkit-tap-highlight-color:transparent;transition:background .5s}
+#stage{position:fixed;inset:0;touch-action:none}
+#stage canvas{display:block}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.hud{position:fixed;left:0;right:0;z-index:5;pointer-events:none;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.hud>*{pointer-events:auto}
+.top{top:0;padding-top:calc(env(safe-area-inset-top,0px) + 12px);display:flex;flex-direction:column;gap:10px}
+.brand{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;pointer-events:none}
+.brand h1{margin:0;font-family:var(--display);font-weight:800;font-size:clamp(24px,6vw,34px);letter-spacing:-.02em;line-height:1}
+.brand h1 b{color:var(--accent);font-weight:800}
+.brand p{margin:0;color:var(--muted);font-size:13px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--panel);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-radius:999px;padding:5px 11px;font-size:12.5px}
+.chip[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.chip .n{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--idle)}
+.s-working .dot,.dot.s-working{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.s-done .dot,.dot.s-done{background:var(--done)}
+.s-error .dot,.dot.s-error{background:var(--err);animation:blink 1s infinite}
+.s-idle .dot,.dot.s-idle{background:var(--idle)}
+@keyframes blink{50%{opacity:.25}}
+
+.bottom{bottom:0;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 12px);display:flex;flex-direction:column;gap:8px}
+.ticker{align-self:flex-start;max-width:100%;font-size:12.5px;color:var(--muted);background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;padding:6px 10px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+.ticker time{font-family:var(--mono);margin-inline-end:6px}
+.bar{display:flex;gap:6px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:var(--panel);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  border-radius:12px;padding:9px 13px;font-size:13.5px;font-weight:500}
+.btn.primary{background:var(--accent-strong);border-color:transparent;color:#fff}
+
+#labels{position:fixed;inset:0;pointer-events:none;z-index:3;overflow:hidden}
+.tag{position:absolute;left:0;top:0;pointer-events:auto;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
+  border:1px solid var(--line);background:var(--panel);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  border-radius:999px;padding:4px 10px 4px 8px;font-size:12px;font-weight:600;transition:opacity .25s}
+.tag .sw{width:10px;height:10px;border-radius:3px}
+.tag.dim{opacity:.28}
+.tag.add{border-style:dashed;color:var(--muted);font-weight:500}
+
+.sheet{position:fixed;z-index:10;left:50%;bottom:0;width:min(560px,100%);transform:translate(-50%,105%);
+  transition:transform .32s cubic-bezier(.2,.8,.2,1);background:var(--panel-solid);border:1px solid var(--line);border-bottom:0;
+  border-radius:20px 20px 0 0;max-height:78%;overflow:auto;box-shadow:0 -20px 50px rgba(0,0,0,.35);
+  padding-block:8px calc(env(safe-area-inset-bottom,0px) + 18px);
+  padding-left:max(18px,env(safe-area-inset-left,0px));padding-right:max(18px,env(safe-area-inset-right,0px))}
+.sheet.open{transform:translate(-50%,0)}
+.grab{width:40px;height:4px;border-radius:2px;background:var(--line);margin:4px auto 12px}
+.sh-head{display:flex;align-items:center;gap:12px}
+.badge{width:44px;height:44px;border-radius:12px;flex:none;display:grid;place-items:center;font-family:var(--display);font-weight:800;color:#fff;font-size:18px}
+.sh-head h2{margin:0;font-family:var(--display);font-size:21px;line-height:1.15;text-wrap:balance}
+.sh-head .sub{color:var(--muted);font-size:13px}
+.sh-head .x{margin-inline-start:auto;border:1px solid var(--line);background:transparent;border-radius:10px;width:36px;height:36px;font-size:18px;flex:none}
+.sec{margin-top:16px}
+.sec h3{margin:0 0 8px;font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+.task{font-size:15px;line-height:1.5}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;border:1px solid var(--line);border-radius:999px;padding:3px 10px;margin-bottom:8px}
+.prog{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:10px}
+.prog i{display:block;height:100%;background:var(--ok);transition:width .6s}
+.row{display:flex;gap:6px;flex-wrap:wrap}
+.row .btn{backdrop-filter:none;background:transparent;font-size:13px;padding:7px 11px;display:inline-flex;align-items:center;gap:6px}
+.row .btn[aria-pressed="true"]{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.docs{display:flex;flex-direction:column;gap:6px}
+.docs a{color:var(--accent);text-decoration:none;font-size:14px;display:flex;justify-content:space-between;gap:8px;border:1px solid var(--line);border-radius:10px;padding:9px 12px}
+.docs a span:last-child{color:var(--muted);font-family:var(--mono);font-size:12px}
+.log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)}
+.log time{font-family:var(--mono);margin-inline-end:8px;color:var(--fg)}
+.catalog{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.catalog button{text-align:start;border:1px solid var(--line);background:transparent;border-radius:12px;padding:10px;display:flex;gap:10px;align-items:center}
+.catalog .badge{width:32px;height:32px;font-size:14px;border-radius:9px}
+.catalog small{display:block;color:var(--muted);font-size:12px}
+.hint{position:fixed;z-index:4;left:50%;top:50%;transform:translate(-50%,-50%);background:var(--panel);border:1px solid var(--line);
+  padding:8px 14px;border-radius:999px;font-size:13px;pointer-events:none;transition:opacity .6s;white-space:nowrap}
+@media (prefers-reduced-motion:reduce){.sheet{transition:none}.s-error .dot,.dot.s-error{animation:none}}
+</style>
+
+<div id="stage"></div>
+<div id="labels"></div>
+
+<header class="hud top">
+  <div class="brand">
+    <h1>Odoo <b>HQ</b></h1>
+    <p id="subtitle"></p>
+  </div>
+  <div class="meta" id="meta"></div>
+  <div class="chips" id="chips"></div>
+</header>
+
+<div class="hint" id="hint"></div>
+
+<footer class="hud bottom">
+  <div class="ticker" id="ticker"></div>
+  <div class="bar">
+    <button class="btn" id="btnDay"></button>
+    <button class="btn" id="btnLang"></button>
+    <button class="btn" id="btnReset"></button>
+    <button class="btn primary" id="btnAdd"></button>
+  </div>
+</footer>
+
+<section class="sheet" id="sheet" role="dialog" aria-modal="false" aria-labelledby="shTitle"><div class="grab"></div><div id="sheetBody"></div></section>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(() => {
+const DOC = 'https://www.odoo.com/documentation/17.0/applications/';
+const AGENTS = {
+  mrp:{color:'#e07a3f',kind:'machine',initial:'M',
+    name:{en:'Manufacturing Manager',ar:'مدير التصنيع'},app:{en:'Manufacturing',ar:'التصنيع'},
+    tasks:[['Planning work orders for MO WH/MO/00008','يخطط أوامر العمل لأمر التصنيع WH/MO/00008'],['Checking component availability','يتحقق من توفر المكوّنات'],['Logging scrap at the Assembly work center','يسجّل التالف في مركز التجميع']],
+    err:['Missing component: M4 screws','مكوّن ناقص: براغي M4'],
+    docs:[['Manufacturing','inventory_and_mrp/manufacturing.html']]},
+  inventory:{color:'#2bb3a3',kind:'shelf',initial:'I',
+    name:{en:'Inventory Manager',ar:'مدير المخزون'},app:{en:'Inventory',ar:'المخزون'},
+    tasks:[['Running min/max replenishment','يشغّل إعادة التعبئة حسب الحد الأدنى والأقصى'],['Validating receipt WH/IN/00017','يعتمد الاستلام WH/IN/00017'],['Cycle-counting aisle B','يجرد الممر B']],
+    err:['Negative stock on 2 products','رصيد سالب في منتجين'],
+    docs:[['Inventory','inventory_and_mrp/inventory.html']]},
+  accounting:{color:'#3b82f6',kind:'coins',initial:'A',
+    name:{en:'Finance Manager',ar:'المدير المالي'},app:{en:'Accounting',ar:'المحاسبة'},
+    tasks:[['Reconciling 48 bank statement lines','يطابق 48 حركة من كشف البنك'],['Posting vendor bills read by OCR','يرحّل فواتير الموردين المقروءة آليًا'],['Preparing the VAT return','يجهّز إقرار ضريبة القيمة المضافة']],
+    err:['Bank feed sync failed','فشلت مزامنة حساب البنك'],
+    docs:[['Accounting','finance/accounting.html']]},
+  website:{color:'#a855f7',kind:'globe',initial:'W',
+    name:{en:'eCommerce Manager',ar:'مدير المتجر الإلكتروني'},app:{en:'Website & eCommerce',ar:'الموقع والمتجر'},
+    tasks:[['Publishing 6 new product pages','ينشر 6 صفحات منتجات جديدة'],['Recovering abandoned carts by email','يسترجع السلات المتروكة عبر البريد'],['Writing SEO titles for 20 products','يكتب عناوين SEO لعشرين منتجًا']],
+    err:['Payment provider is still in test mode','مزوّد الدفع ما زال في وضع الاختبار'],
+    docs:[['eCommerce','websites/ecommerce.html'],['Website','websites/website.html']]},
+  sales:{color:'#f59e0b',kind:'trophy',initial:'S',
+    name:{en:'Sales Manager',ar:'مدير المبيعات'},app:{en:'Sales',ar:'المبيعات'},
+    tasks:[['Turning quotation S00042 into a sales order','يحوّل عرض السعر S00042 إلى أمر بيع'],['Sending 3 quotations for e-signature','يرسل 3 عروض أسعار للتوقيع الإلكتروني'],['Applying the Q4 wholesale pricelist','يطبّق قائمة أسعار الجملة للربع الرابع']],
+    err:['A discount above 20% needs approval','خصم يتجاوز 20% يحتاج موافقة'],
+    docs:[['Sales','sales/sales.html']]},
+  crm:{color:'#10b981',kind:'funnel',initial:'C',
+    name:{en:'CRM Manager',ar:'مدير العملاء'},app:{en:'CRM',ar:'إدارة العملاء'},
+    tasks:[['Scoring 12 new leads','يقيّم 12 عميلًا محتملًا جديدًا'],['Merging duplicate opportunities','يدمج الفرص المكررة'],['Scheduling follow-up calls','يجدول مكالمات المتابعة']],
+    err:['A lead assignment rule has no salesperson','قاعدة توزيع العملاء بلا مندوب مبيعات'],
+    docs:[['CRM','sales/crm.html']]},
+  hr:{color:'#ec4899',kind:'people',initial:'H',
+    name:{en:'HR Manager',ar:'مدير الموارد البشرية'},app:{en:'Employees & Time Off',ar:'الموظفون والإجازات'},
+    tasks:[['Approving 4 time-off requests','يعتمد 4 طلبات إجازة'],['Building an onboarding plan for a new hire','يجهّز خطة تهيئة لموظف جديد'],['Preparing the November payslip batch','يجهّز دفعة رواتب نوفمبر']],
+    err:['An employee contract expires in 7 days','عقد موظف ينتهي خلال 7 أيام'],
+    docs:[['Employees','hr/employees.html'],['Time Off','hr/time_off.html']]},
+  gm:{color:'#714B67',kind:'screen',initial:'G',
+    name:{en:'General Manager',ar:'المدير العام'},app:{en:'Discuss & Dashboards',ar:'المحادثات ولوحات المؤشرات'},
+    tasks:[['Reviewing the weekly KPI dashboard','يراجع لوحة مؤشرات الأداء الأسبوعية'],['Approving a purchase over 5,000 OMR','يعتمد طلب شراء يتجاوز 5,000 ر.ع'],['Sending the Monday digest to the team','يرسل ملخص يوم الاثنين للفريق']],
+    err:['Waiting for your approval on PO P00031','بانتظار موافقتك على أمر الشراء P00031'],
+    docs:[['Discuss','productivity/discuss.html'],['Spreadsheet dashboards','productivity/spreadsheet.html']]},
+  // extra rooms the user can add
+  purchase:{color:'#0ea5e9',kind:'crates',initial:'P',extra:true,
+    name:{en:'Purchase Manager',ar:'مدير المشتريات'},app:{en:'Purchase',ar:'المشتريات'},
+    tasks:[['Comparing 3 vendor quotes for steel sheets','يقارن 3 عروض موردين لألواح الحديد'],['Confirming RFQ P00029','يؤكد طلب عرض السعر P00029'],['Checking late vendor deliveries','يتابع تأخر توريدات الموردين']],
+    err:['Vendor bill does not match the PO','فاتورة المورد لا تطابق أمر الشراء'],
+    docs:[['Purchase','inventory_and_mrp/purchase.html']]},
+  project:{color:'#6366f1',kind:'kanban',initial:'J',extra:true,
+    name:{en:'Project Manager',ar:'مدير المشاريع'},app:{en:'Project',ar:'المشاريع'},
+    tasks:[['Moving 5 tasks to Done','ينقل 5 مهام إلى منجز'],['Updating the Gantt plan for the fit-out','يحدّث مخطط جانت لمشروع التشطيب'],['Logging timesheets for the week','يسجّل ساعات العمل للأسبوع']],
+    err:['Milestone "Handover" is overdue','مرحلة "التسليم" متأخرة'],
+    docs:[['Project','services/project.html']]},
+  helpdesk:{color:'#ef4444',kind:'headset',initial:'D',extra:true,
+    name:{en:'Support Manager',ar:'مدير الدعم الفني'},app:{en:'Helpdesk',ar:'الدعم الفني'},
+    tasks:[['Answering 7 open tickets','يرد على 7 تذاكر مفتوحة'],['Publishing a knowledge article','ينشر مقالًا في قاعدة المعرفة'],['Collecting customer ratings','يجمع تقييمات العملاء']],
+    err:['Ticket #214 breached its SLA','التذكرة #214 تجاوزت مدة الاستجابة'],
+    docs:[['Helpdesk','services/helpdesk.html']]},
+  marketing:{color:'#f97316',kind:'megaphone',initial:'K',extra:true,
+    name:{en:'Marketing Manager',ar:'مدير التسويق'},app:{en:'Email Marketing',ar:'التسويق بالبريد'},
+    tasks:[['Scheduling the Ramadan newsletter','يجدول نشرة رمضان البريدية'],['A/B testing two subject lines','يختبر عنوانين للرسالة'],['Cleaning the mailing list','ينظّف قائمة المراسلات']],
+    err:['Bounce rate above 5%','نسبة الارتداد تجاوزت 5%'],
+    docs:[['Email Marketing','marketing/email_marketing.html']]},
+  pos:{color:'#84cc16',kind:'register',initial:'R',extra:true,
+    name:{en:'Point of Sale Manager',ar:'مدير نقاط البيع'},app:{en:'Point of Sale',ar:'نقاط البيع'},
+    tasks:[['Closing the register for shop 1','يغلق صندوق الفرع 1'],['Syncing offline orders','يزامن الطلبات غير المتصلة'],['Updating loyalty points','يحدّث نقاط الولاء']],
+    err:['Cash difference of 3.250 OMR','فرق نقدي 3.250 ر.ع'],
+    docs:[['Point of Sale','sales/point_of_sale.html']]},
+};
+const BASE = ['mrp','inventory','accounting','website','sales','crm','hr','gm'];
+const EXTRAS = Object.keys(AGENTS).filter(k => AGENTS[k].extra);
+
+const T = {
+  en:{sub:'Your Odoo apps, run as a team of agents',meta:(n,r)=>`${n} agents · ${r} ready for review`,
+      st:{working:'Working',idle:'Idle',done:'Done',error:'Needs you'},
+      day:'Day',night:'Night',lang:'عربي',reset:'Recenter',add:'+ Add room',
+      cur:'Current task',set:'Set status',next:'Start next task',resolve:'Resolve',docs:'Odoo documentation',log:'Recent activity',
+      remove:'Remove room',addT:'Add a room',addD:'Pick an Odoo app to give it its own agent.',full:'Every app already has a room.',
+      started:'started',finished:'finished',needs:'needs you:',resolved:'resolved the issue',noLog:'Nothing yet.',
+      hint:'Drag to rotate · pinch to zoom · tap a room',close:'Close'},
+  ar:{sub:'تطبيقات أودو كفريق من الوكلاء',meta:(n,r)=>`${n} وكلاء · ${r} جاهز للمراجعة`,
+      st:{working:'يشتغل',idle:'فاضي',done:'خلّص',error:'يحتاجك'},
+      day:'نهاري',night:'ليلي',lang:'EN',reset:'توسيط',add:'+ أضف غرفة',
+      cur:'المهمة الحالية',set:'غيّر الحالة',next:'ابدأ المهمة التالية',resolve:'حلّ المشكلة',docs:'توثيق أودو',log:'آخر النشاطات',
+      remove:'احذف الغرفة',addT:'أضف غرفة',addD:'اختر تطبيقًا من أودو ليكون له وكيل خاص.',full:'كل التطبيقات لها غرفة بالفعل.',
+      started:'بدأ',finished:'أنهى',needs:'يحتاجك:',resolved:'حلّ المشكلة',noLog:'لا شيء بعد.',
+      hint:'اسحب للتدوير · قرّب بإصبعين · اضغط على غرفة',close:'إغلاق'}
+};
+
+// ---------- state ----------
+const store = { get(k,d){try{const v=localStorage.getItem('odoohq:'+k);return v?JSON.parse(v):d}catch(e){return d}},
+                set(k,v){try{localStorage.setItem('odoohq:'+k,JSON.stringify(v))}catch(e){}} };
+let lang = store.get('lang','en');
+let night = store.get('night', !(window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches));
+let extras = store.get('extras',[]).filter(k => AGENTS[k]);
+let filter = null;
+const seed = {mrp:'working',inventory:'done',accounting:'working',website:'idle',sales:'working',crm:'error',hr:'idle',gm:'working'};
+const state = {}; // id -> {status, task, progress, log:[]}
+function initAgent(id){
+  if(state[id]) return;
+  state[id] = {status: seed[id] || 'working', task: Math.floor(Math.random()*3), progress: 15+Math.random()*50, log: []};
+}
+const events = [];
+const ids = () => [...BASE, ...extras];
+
+// ---------- three ----------
+const stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+stage.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.OrthographicCamera(-1,1,1,-1,-200,400);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = .08;
+controls.minPolarAngle = .55; controls.maxPolarAngle = 1.25;
+controls.minAzimuthAngle = .05; controls.maxAzimuthAngle = 1.5;
+controls.minZoom = .6; controls.maxZoom = 4;
+controls.screenSpacePanning = true;
+
+const hemi = new THREE.HemisphereLight(0xffffff, 0x334, .6); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xffffff,.6); sun.position.set(10,20,14); scene.add(sun);
+
+const W=6, D=5, H=3.4;
+const mat = c => new THREE.MeshLambertMaterial({color:c});
+const box = (w,h,d,c) => new THREE.Mesh(new THREE.BoxGeometry(w,h,d), typeof c==='object'?c:mat(c));
+const building = new THREE.Group(); scene.add(building);
+let rooms = {}; let ghost = null; let floors = 0;
+
+function shade(hex, f){ const c=new THREE.Color(hex); c.multiplyScalar(f); return c; }
+
+function screenTex(color){
+  const cv=document.createElement('canvas'); cv.width=128; cv.height=72;
+  const tex=new THREE.CanvasTexture(cv);
+  const draw=(seedN=Math.random())=>{
+    const g=cv.getContext('2d'); g.fillStyle='#0b1030'; g.fillRect(0,0,128,72);
+    g.strokeStyle='rgba(255,255,255,.12)'; for(let y=16;y<72;y+=14){g.beginPath();g.moveTo(6,y);g.lineTo(122,y);g.stroke();}
+    g.fillStyle=color; let v=.3;
+    for(let i=0;i<9;i++){ v=Math.min(.95,Math.max(.15,v+(Math.sin(i*1.7+seedN*9)*.25))); g.fillRect(10+i*12,66-v*54,8,v*54); }
+    g.fillStyle='#fff'; g.fillRect(8,6,30,4);
+    tex.needsUpdate=true;
+  };
+  draw(); return {tex,draw};
+}
+
+function makeChar(color){
+  const g=new THREE.Group();
+  const skin=mat('#f0c39b'), cloth=mat(color), dark=mat('#2a2440');
+  const legs=box(.5,.22,.4,dark); legs.position.set(.15,.62,0); g.add(legs);
+  const body=box(.42,.6,.5,cloth); body.position.set(-.05,1.05,0); g.add(body);
+  const head=new THREE.Group(); head.position.set(-.02,1.62,0); g.add(head);
+  const hd=box(.5,.5,.5,skin); head.add(hd);
+  const hair=box(.54,.16,.54,mat('#3a2a22')); hair.position.y=.24; head.add(hair);
+  const ghutra=box(.12,.36,.54,mat('#f6f6f6')); ghutra.position.set(-.22,.04,0); head.add(ghutra);
+  [-.12,.12].forEach(z=>{const e=box(.04,.08,.07,'#111'); e.position.set(.26,.04,z); head.add(e);});
+  const arms=[-.3,.3].map(z=>{const p=new THREE.Group(); p.position.set(-.02,1.28,z);
+    const a=box(.5,.14,.14,cloth); a.position.x=.22; p.add(a); g.add(p); return p;});
+  return {g,head,arms,body};
+}
+
+function makeProp(kind,color){
+  const g=new THREE.Group(); const c=mat(color);
+  if(kind==='machine'){ const m=box(1.2,1.1,1,'#56607a'); m.position.y=.6; g.add(m);
+    const gear=new THREE.Mesh(new THREE.TorusGeometry(.32,.1,6,10),c); gear.position.set(0,1.45,0); g.add(gear); g.userData.spin=gear;
+    const belt=box(.4,.08,1.6,'#222'); belt.position.set(-.85,.45,.2); g.add(belt);
+    for(let i=0;i<3;i++){const b=box(.22,.22,.22,color); b.position.set(-.85,.6,-.3+i*.5); g.add(b);} }
+  else if(kind==='shelf'){ for(let s=0;s<3;s++){ const p=box(1.6,.06,.6,'#8a6a4d'); p.position.y=.2+s*.65; g.add(p);
+      for(let i=0;i<3;i++){ const b=box(.36,.36,.4,[color,'#c9a26b','#7d8ca3'][(i+s)%3]); b.position.set(-.5+i*.5,.41+s*.65,0); g.add(b);} }
+    [-.78,.78].forEach(x=>{const l=box(.06,1.6,.6,'#6d5038'); l.position.set(x,.8,0); g.add(l);}); }
+  else if(kind==='coins'){ for(let i=0;i<4;i++){ const n=2+i*2; for(let j=0;j<n;j++){ const coin=new THREE.Mesh(new THREE.CylinderGeometry(.18,.18,.07,14),mat('#f2c14e')); coin.position.set(-.5+i*.38,.04+j*.075,0); g.add(coin);} } }
+  else if(kind==='globe'){ const s=new THREE.Mesh(new THREE.IcosahedronGeometry(.55,1),new THREE.MeshLambertMaterial({color,wireframe:true})); s.position.y=1.1; g.add(s); g.userData.spin=s;
+    const st=box(.1,.6,.1,'#888'); st.position.y=.3; g.add(st); }
+  else if(kind==='trophy'){ const cup=new THREE.Mesh(new THREE.CylinderGeometry(.3,.12,.5,12),mat('#f2c14e')); cup.position.y=1.05; g.add(cup);
+    const base=box(.4,.2,.4,'#3b2f2a'); base.position.y=.7; g.add(base); const ped=box(.6,.6,.6,'#5a4f6b'); ped.position.y=.3; g.add(ped); g.userData.spin=cup; }
+  else if(kind==='funnel'){ const f=new THREE.Mesh(new THREE.ConeGeometry(.55,.9,16,1,true),new THREE.MeshLambertMaterial({color,side:THREE.DoubleSide})); f.rotation.x=Math.PI; f.position.y=1.2; g.add(f);
+    for(let i=0;i<5;i++){ const b=new THREE.Mesh(new THREE.SphereGeometry(.09,8,6),mat('#fff')); b.position.set(Math.cos(i)*.25,1.75+i*.12,Math.sin(i)*.25); g.add(b);} g.userData.drops=g.children.slice(-5);
+    const st=box(.08,.75,.08,'#777'); st.position.y=.37; g.add(st); }
+  else if(kind==='people'){ for(let i=0;i<2;i++){ const p=makeChar(['#94a3b8','#c084fc'][i]).g; p.scale.setScalar(.75); p.position.set(i*.8,-.3,i*.5-.3); p.rotation.y=Math.PI*.9; g.add(p);} const pl=makePlant(); pl.position.set(-.6,0,.6); g.add(pl); }
+  else if(kind==='screen'){ const pl=makePlant(); pl.position.set(.2,0,.4); g.add(pl); const sofa=box(1.3,.4,.6,color); sofa.position.set(.2,.2,-.6); g.add(sofa); }
+  else if(kind==='crates'){ for(let i=0;i<5;i++){ const b=box(.55,.45,.55,i%2?'#c9a26b':'#a77f4f'); b.position.set((i%3)*.6-.6,.23+Math.floor(i/3)*.46,0); g.add(b);} }
+  else if(kind==='kanban'){ const brd=box(1.6,1.1,.08,'#f5f5f5'); brd.position.y=1.2; g.add(brd);
+    ['#fde68a','#a7f3d0','#bfdbfe'].forEach((cc,i)=>{for(let j=0;j<3-i;j++){const n=box(.32,.22,.04,cc); n.position.set(-.5+i*.5,1.5-j*.3,.06); g.add(n);}});
+    const st=box(.08,.7,.08,'#777'); st.position.y=.35; g.add(st); }
+  else if(kind==='headset'){ const h=new THREE.Mesh(new THREE.TorusGeometry(.35,.06,6,16,Math.PI),c); h.position.y=1.1; g.add(h);
+    [-.35,.35].forEach(x=>{const e=box(.14,.24,.2,'#222'); e.position.set(x,1.05,0); g.add(e);}); const ped=box(.5,.85,.5,'#5a4f6b'); ped.position.y=.42; g.add(ped); g.userData.spin=h; }
+  else if(kind==='megaphone'){ const m=new THREE.Mesh(new THREE.ConeGeometry(.35,.9,14,1,true),new THREE.MeshLambertMaterial({color,side:THREE.DoubleSide})); m.rotation.z=Math.PI/2; m.position.y=1.1; g.add(m);
+    const ped=box(.5,.75,.5,'#5a4f6b'); ped.position.y=.37; g.add(ped); g.userData.spin=m; }
+  else if(kind==='register'){ const cnt=box(1.4,.9,.6,'#8a6a4d'); cnt.position.y=.45; g.add(cnt); const r=box(.5,.3,.4,'#333'); r.position.set(0,1.05,0); g.add(r);
+    const scr=box(.4,.25,.04,color); scr.position.set(0,1.35,-.1); g.add(scr); }
+  return g;
+}
+function makePlant(){ const g=new THREE.Group(); const pot=new THREE.Mesh(new THREE.CylinderGeometry(.2,.16,.35,10),mat('#e8e2d8')); pot.position.y=.17; g.add(pot);
+  for(let i=0;i<6;i++){ const l=new THREE.Mesh(new THREE.SphereGeometry(.17,8,6),mat('#3f9b5a')); l.position.set(Math.cos(i)*.15,.5+(i%3)*.15,Math.sin(i)*.15); g.add(l);} return g; }
+
+const labelsEl=document.getElementById('labels');
+function makeRoom(id,i){
+  const a=AGENTS[id]; const f=Math.floor(i/2), col=i%2;
+  const g=new THREE.Group(); g.position.set((col-.5)*W, f*H, 0); building.add(g);
+  const rug=box(W-.5,.04,D-.6, new THREE.MeshLambertMaterial({color:shade(a.color,.75)})); rug.position.set(0,.14,0); g.add(rug);
+  const back=box(W,H-.25,.14,'#222a5c'); back.position.set(0,H/2,-D/2); g.add(back);
+  const left=box(.14,H-.25,D,'#1d2452'); left.position.set(-W/2,H/2,0); g.add(left);
+  const stripe=box(W-.2,.08,.05, new THREE.MeshBasicMaterial({color:a.color})); stripe.position.set(0,H-.4,-D/2+.1); g.add(stripe);
+  // wall screen
+  const st=screenTex(a.color); const scr=new THREE.Mesh(new THREE.PlaneGeometry(1.9,1.07), new THREE.MeshBasicMaterial({map:st.tex}));
+  scr.position.set(.6,1.95,-D/2+.08); g.add(scr);
+  // desk + chair + character
+  const desk=box(.9,.08,1.5,'#c89b6d'); desk.position.set(-.5,.82,.6); g.add(desk);
+  [[-.85,.0],[-.15,.0],[-.85,1.2],[-.15,1.2]].forEach(([x,z])=>{const l=box(.07,.78,.07,'#7a5a3c'); l.position.set(x,.43,z); g.add(l);});
+  const mon=box(.06,.55,.85,'#1b1b2b'); mon.position.set(-.25,1.17,.6); g.add(mon);
+  const monScreen=new THREE.Mesh(new THREE.PlaneGeometry(.78,.48), new THREE.MeshBasicMaterial({color:a.color}));
+  monScreen.rotation.y=-Math.PI/2; monScreen.position.set(-.29,1.17,.6); g.add(monScreen);
+  const chair=box(.55,.1,.55,'#333a66'); chair.position.set(-1.65,.55,.6); g.add(chair);
+  const chairB=box(.1,.7,.55,'#333a66'); chairB.position.set(-1.95,.95,.6); g.add(chairB);
+  const ch=makeChar(a.color); ch.g.position.set(-1.6,-.05,.6); g.add(ch.g);
+  // status ring above head
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(.22,.045,8,24,Math.PI*1.5), new THREE.MeshBasicMaterial({color:0x34d399}));
+  ring.position.set(-1.6,2.25,.6); g.add(ring);
+  const prop=makeProp(a.kind,a.color); prop.position.set(1.6,.15,-.9); g.add(prop);
+  const lamp=new THREE.PointLight(0xffd9a8,.8,7,2); lamp.position.set(0,H-.6,.6); g.add(lamp);
+  const hit=new THREE.Mesh(new THREE.BoxGeometry(W,H,D),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}));
+  hit.position.set(0,H/2,0); hit.userData.room=id; g.add(hit);
+  const tag=document.createElement('button'); tag.className='tag'; tag.onclick=()=>openAgent(id); labelsEl.appendChild(tag);
+  return {id,g,ch,ring,prop,lamp,hit,tag,monScreen,st,anchor:new THREE.Vector3((col-.5)*W+W*.18, f*H+H-.15, D/2)};
+}
+function slab(y,full){ const s=box(W*2+.3,.25,D+.3,'#2b3170'); s.position.set(0,y,0); building.add(s);
+  const e=new THREE.LineSegments(new THREE.EdgesGeometry(s.geometry), new THREE.LineBasicMaterial({color:0x8f86ff,transparent:true,opacity:.7})); e.position.copy(s.position); building.add(e);
+  s.userData.edge=e; return s; }
+
+let slabs=[];
+function build(){
+  building.clear(); labelsEl.innerHTML=''; rooms={}; slabs=[];
+  const list=ids(); list.forEach(initAgent);
+  floors=Math.ceil((list.length+(EXTRAS.length>extras.length?1:0))/2);
+  for(let f=0;f<=floors;f++) slabs.push(slab(f*H-.12));
+  list.forEach((id,i)=> rooms[id]=makeRoom(id,i));
+  ghost=null;
+  if(extras.length<EXTRAS.length){
+    const i=list.length, f=Math.floor(i/2), col=i%2;
+    const geo=new THREE.BoxGeometry(W-.6,H-.6,D-.6);
+    const ln=new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineDashedMaterial({color:0xa6abd8,dashSize:.25,gapSize:.18}));
+    ln.computeLineDistances(); ln.position.set((col-.5)*W,f*H+H/2,0); building.add(ln);
+    const plus=new THREE.Group(); plus.add(box(.9,.16,.16,new THREE.MeshBasicMaterial({color:0xa6abd8}))); plus.add(box(.16,.9,.16,new THREE.MeshBasicMaterial({color:0xa6abd8})));
+    plus.position.copy(ln.position); building.add(plus);
+    const hit=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false})); hit.position.copy(ln.position); hit.userData.room='__add'; building.add(hit);
+    const tag=document.createElement('button'); tag.className='tag add'; tag.onclick=openAdd; labelsEl.appendChild(tag);
+    ghost={ln,plus,hit,tag,anchor:new THREE.Vector3((col-.5)*W+W*.18,f*H+H-.15,D/2)};
+  }
+  fit(true); applyMode(); renderUI();
+}
+
+let fitH=20;
+function fit(reset){
+  const w=innerWidth,h=innerHeight; renderer.setSize(w,h);
+  const aspect=w/h; const bh=floors*H;
+  fitH=Math.max(bh*1.12+4, 12.5/aspect);
+  camera.left=-fitH*aspect/2; camera.right=fitH*aspect/2; camera.top=fitH/2; camera.bottom=-fitH/2;
+  camera.updateProjectionMatrix();
+  if(reset){ const cy=bh/2 - fitH*.04; controls.target.set(0,cy,0);
+    camera.position.set(30,cy+22,30); camera.zoom=1; camera.updateProjectionMatrix(); controls.update(); }
+}
+addEventListener('resize',()=>fit(false));
+
+function applyMode(){
+  document.body.classList.toggle('day',!night);
+  scene.background=new THREE.Color(night?0x0e1130:0xdce7f3);
+  hemi.intensity=night?.45:.95; hemi.color.set(night?0x9aa0ff:0xffffff); hemi.groundColor.set(night?0x1a1840:0x8899aa);
+  sun.intensity=night?.15:.75;
+  Object.values(rooms).forEach(r=>{ r.lamp.intensity=night?1.1:.25; });
+  slabs.forEach(s=>{ s.material.color.set(night?0x2b3170:0xf3f4f8); s.userData.edge.material.color.set(night?0x8f86ff:0x714B67); s.userData.edge.material.opacity=night?.75:.35; });
+  building.traverse(o=>{ if(o.geometry && o.geometry.parameters && o.material && o.material.color){
+    const hx=o.material.color.getHex(); if(hx===0x222a5c||hx===0xe9ecf5) o.material.color.set(night?0x222a5c:0xe9ecf5);
+    if(hx===0x1d2452||hx===0xd9deee) o.material.color.set(night?0x1d2452:0xd9deee); }});
+}
+
+// ---------- UI ----------
+const $=id=>document.getElementById(id);
+const t=()=>T[lang];
+const L=pair=>lang==='ar'?pair[1]:pair[0];
+const nm=id=>AGENTS[id].name[lang];
+const statusColor={working:0x34d399,idle:0x9aa3c7,done:0x60a5fa,error:0xfb7185};
+const now=()=>new Date().toTimeString().slice(0,5);
+
+function renderUI(){
+  document.documentElement.lang=lang; document.documentElement.dir=lang==='ar'?'rtl':'ltr';
+  $('subtitle').textContent=t().sub;
+  const list=ids(); const counts={working:0,idle:0,done:0,error:0}; list.forEach(id=>counts[state[id].status]++);
+  $('meta').textContent=t().meta(list.length,counts.done);
+  $('chips').innerHTML=['working','done','error','idle'].map(s=>
+    `<button class="chip s-${s}" data-s="${s}" aria-pressed="${filter===s}"><span class="dot"></span>${t().st[s]} <span class="n">${counts[s]}</span></button>`).join('');
+  $('chips').querySelectorAll('.chip').forEach(b=>b.onclick=()=>{filter=filter===b.dataset.s?null:b.dataset.s;renderUI();});
+  $('btnDay').textContent=night?'☀ '+t().day:'☾ '+t().night;
+  $('btnLang').textContent=t().lang; $('btnReset').textContent=t().reset; $('btnAdd').textContent=t().add;
+  $('btnAdd').hidden=extras.length>=EXTRAS.length;
+  list.forEach(id=>{ const r=rooms[id]; if(!r) return; const s=state[id].status;
+    r.tag.className='tag s-'+s+(filter&&filter!==s?' dim':'');
+    r.tag.innerHTML=`<span class="dot"></span><span>${nm(id)}</span><span class="sw" style="background:${AGENTS[id].color}"></span>`;
+    r.tag.setAttribute('aria-label',nm(id)+' — '+t().st[s]); });
+  if(ghost) ghost.tag.textContent=t().add;
+  const e=events[0]; $('ticker').innerHTML=e?`<time>${e.time}</time>${e.text()}`:'';
+  $('ticker').hidden=!e;
+  $('hint').textContent=t().hint;
+  if(openId) (openId==='__add'?renderAdd():renderAgent(openId));
+}
+
+function log(id,kind,extra){
+  const time=now(); const entry={id,time,text:()=>{
+    const n=nm(id); const task=L(AGENTS[id].tasks[state[id].task]);
+    if(kind==='start') return `${n} ${t().started}: ${task}`;
+    if(kind==='done') return `${n} ${t().finished}: ${task}`;
+    if(kind==='error') return `${n} ${t().needs} ${L(AGENTS[id].err)}`;
+    if(kind==='resolved') return `${n} ${t().resolved}`;
+    return n;}};
+  events.unshift(entry); events.length=Math.min(events.length,40);
+  state[id].log.unshift(entry); state[id].log.length=Math.min(state[id].log.length,6);
+}
+function setStatus(id,s,silent){
+  const st=state[id]; const was=st.status;
+  if(s==='working' && (was==='done'||was==='idle')){ st.task=(st.task+1)%AGENTS[id].tasks.length; st.progress=5; }
+  st.status=s;
+  if(!silent){ if(s==='working') log(id, was==='error'?'resolved':'start'); else if(s==='done') {st.progress=100; log(id,'done');} else if(s==='error') log(id,'error'); }
+  renderUI();
+}
+
+// sheet
+let openId=null;
+const sheet=$('sheet'), body=$('sheetBody');
+function openAgent(id){ openId=id; renderAgent(id); sheet.classList.add('open'); }
+function openAdd(){ openId='__add'; renderAdd(); sheet.classList.add('open'); }
+function closeSheet(){ sheet.classList.remove('open'); openId=null; }
+function renderAgent(id){
+  const a=AGENTS[id], s=state[id];
+  const task=s.status==='error'?L(a.err):L(a.tasks[s.task]);
+  body.innerHTML=`
+  <div class="sh-head"><div class="badge" style="background:${a.color}">${a.initial}</div>
+    <div><h2 id="shTitle">${a.name[lang]}</h2><div class="sub">${a.app[lang]} · ${lang==='ar'?a.name.en:a.name.ar}</div></div>
+    <button class="x" aria-label="${t().close}" data-close>×</button></div>
+  <div class="sec"><h3>${t().cur}</h3>
+    <span class="pill s-${s.status}"><span class="dot"></span>${t().st[s.status]}</span>
+    <div class="task">${task}</div>
+    <div class="prog"><i style="width:${Math.round(s.progress)}%;background:var(--${s.status==='error'?'err':s.status==='done'?'done':s.status==='idle'?'idle':'ok'})"></i></div></div>
+  <div class="sec"><h3>${t().set}</h3><div class="row">
+    ${['working','idle','done','error'].map(k=>`<button class="btn s-${k}" data-set="${k}" aria-pressed="${s.status===k}"><span class="dot"></span>${t().st[k]}</button>`).join('')}
+    ${s.status==='error'?`<button class="btn" data-set="working" style="border-color:var(--err)">${t().resolve}</button>`:''}
+    ${s.status!=='error'?`<button class="btn" data-next>${t().next}</button>`:''}</div></div>
+  <div class="sec"><h3>${t().docs}</h3><div class="docs">
+    ${a.docs.map(([l,u])=>`<a href="${DOC+u}" target="_blank" rel="noopener"><span>${l}</span><span>odoo.com ↗</span></a>`).join('')}</div></div>
+  <div class="sec"><h3>${t().log}</h3><ul class="log">
+    ${s.log.length?s.log.map(e=>`<li><time>${e.time}</time>${e.text()}</li>`).join(''):`<li>${t().noLog}</li>`}</ul></div>
+  ${a.extra?`<div class="sec"><button class="btn" data-remove style="background:transparent">${t().remove}</button></div>`:''}`;
+  body.querySelector('[data-close]').onclick=closeSheet;
+  body.querySelectorAll('[data-set]').forEach(b=>b.onclick=()=>setStatus(id,b.dataset.set));
+  const nx=body.querySelector('[data-next]'); if(nx) nx.onclick=()=>{ state[id].status='done'; setStatus(id,'working'); };
+  const rm=body.querySelector('[data-remove]'); if(rm) rm.onclick=()=>{ extras=extras.filter(x=>x!==id); delete state[id]; store.set('extras',extras); closeSheet(); build(); };
+}
+function renderAdd(){
+  const left=EXTRAS.filter(k=>!extras.includes(k));
+  body.innerHTML=`<div class="sh-head"><div><h2 id="shTitle">${t().addT}</h2><div class="sub">${t().addD}</div></div>
+    <button class="x" aria-label="${t().close}" data-close>×</button></div>
+    <div class="sec">${left.length?`<div class="catalog">${left.map(k=>`<button data-add="${k}"><span class="badge" style="background:${AGENTS[k].color}">${AGENTS[k].initial}</span><span>${AGENTS[k].app[lang]}<small>${AGENTS[k].name[lang]}</small></span></button>`).join('')}</div>`:`<p>${t().full}</p>`}</div>`;
+  body.querySelector('[data-close]').onclick=closeSheet;
+  body.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{ const k=b.dataset.add; extras.push(k); store.set('extras',extras);
+    state[k]=null; delete state[k]; build(); state[k].status='working'; log(k,'start'); renderUI(); openAgent(k); });
+}
+addEventListener('keydown',e=>{ if(e.key==='Escape') closeSheet(); });
+
+$('btnDay').onclick=()=>{ night=!night; store.set('night',night); applyMode(); renderUI(); };
+$('btnLang').onclick=()=>{ lang=lang==='en'?'ar':'en'; store.set('lang',lang); renderUI(); };
+$('btnReset').onclick=()=>fit(true);
+$('btnAdd').onclick=openAdd;
+
+// tap rooms in 3D
+const ray=new THREE.Raycaster(), ptr=new THREE.Vector2(); let down=null;
+renderer.domElement.addEventListener('pointerdown',e=>{down={x:e.clientX,y:e.clientY};});
+renderer.domElement.addEventListener('pointerup',e=>{
+  if(!down||Math.hypot(e.clientX-down.x,e.clientY-down.y)>6) return; down=null;
+  ptr.set(e.clientX/innerWidth*2-1, -(e.clientY/innerHeight)*2+1); ray.setFromCamera(ptr,camera);
+  const targets=Object.values(rooms).map(r=>r.hit); if(ghost) targets.push(ghost.hit);
+  const hit=ray.intersectObjects(targets)[0];
+  if(hit){ hit.object.userData.room==='__add'?openAdd():openAgent(hit.object.userData.room); } else closeSheet();
+});
+controls.addEventListener('start',()=>{ $('hint').style.opacity=0; });
+setTimeout(()=>{ $('hint').style.opacity=0; },4500);
+
+// ---------- simulation ----------
+setInterval(()=>{
+  ids().forEach(id=>{ const s=state[id];
+    if(s.status==='working'){ s.progress=Math.min(100,s.progress+6+Math.random()*14);
+      if(s.progress>=100) setStatus(id,'done'); else if(Math.random()<.03) setStatus(id,'error'); }
+    else if(s.status==='done' && Math.random()<.18) setStatus(id,'working');
+    else if(s.status==='idle' && Math.random()<.12) setStatus(id,'working');
+  });
+  Object.values(rooms).forEach(r=>{ if(state[r.id].status==='working') r.st.draw(); });
+  renderUI();
+},3200);
+
+// ---------- loop ----------
+const v=new THREE.Vector3(); const clock=new THREE.Clock();
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+function frame(){
+  const tt=clock.getElapsedTime(); controls.update();
+  Object.values(rooms).forEach(r=>{ const s=state[r.id].status; const ch=r.ch;
+    r.ring.material.color.setHex(statusColor[s]);
+    r.ring.visible=s!=='idle';
+    r.monScreen.material.color.set(s==='error'?(Math.sin(tt*6)>0?'#fb7185':'#3a0d18'):s==='idle'?'#222a44':AGENTS[r.id].color);
+    if(reduce){ ch.arms.forEach(a=>a.rotation.z=0); ch.head.rotation.set(0,0,0); }
+    else if(s==='working'){ r.ring.rotation.z=-tt*4; ch.arms[0].rotation.z=Math.sin(tt*14)*.12; ch.arms[1].rotation.z=Math.cos(tt*14)*.12; ch.head.rotation.z=Math.sin(tt*2)*.05; ch.head.rotation.y=0; }
+    else if(s==='error'){ r.ring.rotation.z=0; r.ring.scale.setScalar(1+Math.sin(tt*6)*.15); ch.head.rotation.y=Math.sin(tt*5)*.4; ch.arms.forEach(a=>a.rotation.z=.6); }
+    else if(s==='done'){ r.ring.rotation.z=0; r.ring.scale.setScalar(1); ch.arms.forEach((a,i)=>a.rotation.z=1.3+Math.sin(tt*3+i)*.15); ch.head.rotation.set(0,0,.1); }
+    else { ch.arms.forEach(a=>a.rotation.z=-.2); ch.head.rotation.set(0,-.5,-.15+Math.sin(tt*1.2)*.04); }
+    if(!reduce && r.prop.userData.spin) r.prop.userData.spin.rotation.y=tt*(s==='working'?1.2:.2);
+    if(!reduce && r.prop.userData.drops) r.prop.userData.drops.forEach((d,i)=>{ d.position.y=1.6+((tt*.6+i*.2)%1)*.6; });
+    // label
+    v.copy(r.anchor).project(camera); const x=(v.x+1)/2*innerWidth, y=(1-v.y)/2*innerHeight;
+    r.tag.style.transform=`translate(${x}px,${y}px) translate(-50%,-100%)`;
+  });
+  if(ghost){ v.copy(ghost.anchor).project(camera); ghost.tag.style.transform=`translate(${(v.x+1)/2*innerWidth}px,${(1-v.y)/2*innerHeight}px) translate(-50%,-100%)`;
+    if(!reduce) ghost.plus.rotation.y=tt; }
+  renderer.render(scene,camera); requestAnimationFrame(frame);
+}
+
+build();
+['sales','crm','accounting'].forEach((id,i)=>{ log(id, state[id].status==='error'?'error':'start'); });
+renderUI();
+frame();
+})();
+</script>
