@@ -1,0 +1,603 @@
+<title>Life HQ</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: full-bleed 3D building of life areas, glass HUD at top and bottom, one bottom sheet for a room. */
+:root{
+  --bg:#0e1130; --panel:rgba(20,24,64,.84); --panel-solid:#171b48; --fg:#eef0ff; --muted:#a6abd8;
+  --line:rgba(170,180,255,.22); --accent:#f5b971; --accent-strong:#c2652a; --field:rgba(255,255,255,.06);
+  --ok:#34d399; --idle:#9aa3c7; --done:#60a5fa; --err:#fb7185;
+  --display:"Bricolage Grotesque","IBM Plex Sans Arabic",system-ui,sans-serif;
+  --body:"IBM Plex Sans Arabic",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  color-scheme:dark;
+}
+body.day{
+  --bg:#dce7f3; --panel:rgba(255,255,255,.9); --panel-solid:#ffffff; --fg:#1c2042; --muted:#5a5f86;
+  --line:rgba(40,50,110,.16); --accent:#b4531c; --accent-strong:#c2652a; --field:rgba(20,30,80,.04);
+  --ok:#059669; --idle:#6b7398; --done:#2563eb; --err:#e11d48;
+  color-scheme:light;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);overflow:hidden;-webkit-tap-highlight-color:transparent;transition:background .5s}
+#stage{position:fixed;inset:0;touch-action:none}
+#stage canvas{display:block}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.hud{position:fixed;left:0;right:0;z-index:5;pointer-events:none;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.hud>*{pointer-events:auto}
+.top{top:0;padding-top:calc(env(safe-area-inset-top,0px) + 12px);display:flex;flex-direction:column;gap:10px}
+.brand{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;pointer-events:none}
+.brand h1{margin:0;font-family:var(--display);font-weight:800;font-size:clamp(24px,6vw,34px);letter-spacing:-.02em;line-height:1}
+.brand h1 b{color:var(--accent);font-weight:800}
+.brand p{margin:0;color:var(--muted);font-size:13px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;pointer-events:none}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--panel);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-radius:999px;padding:5px 11px;font-size:12.5px}
+.chip[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.chip .n{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--idle)}
+.s-working .dot{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.s-done .dot{background:var(--done)}
+.s-error .dot{background:var(--err);animation:blink 1s infinite}
+.s-idle .dot{background:var(--idle)}
+@keyframes blink{50%{opacity:.25}}
+
+.bottom{bottom:0;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 12px);display:flex;flex-direction:column;gap:8px}
+.ticker{align-self:flex-start;max-width:100%;font-size:12.5px;color:var(--muted);background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;padding:6px 10px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+.bar{display:flex;gap:6px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:var(--panel);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  border-radius:12px;padding:9px 13px;font-size:13.5px;font-weight:500}
+.btn.primary{background:var(--accent-strong);border-color:transparent;color:#fff}
+
+#labels{position:fixed;inset:0;pointer-events:none;z-index:3;overflow:hidden}
+.tag{position:absolute;left:0;top:0;pointer-events:auto;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
+  border:1px solid var(--line);background:var(--panel);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  border-radius:999px;padding:4px 10px 4px 8px;font-size:12px;font-weight:600;transition:opacity .25s}
+.tag .sw{width:10px;height:10px;border-radius:3px}
+.tag .c{font-family:var(--mono);font-weight:500;color:var(--muted);font-size:11px}
+.tag.dim{opacity:.28}
+.tag.add{border-style:dashed;color:var(--muted);font-weight:500}
+
+.sheet{position:fixed;z-index:10;left:50%;bottom:0;width:min(560px,100%);transform:translate(-50%,105%);
+  transition:transform .32s cubic-bezier(.2,.8,.2,1);background:var(--panel-solid);border:1px solid var(--line);border-bottom:0;
+  border-radius:20px 20px 0 0;max-height:82%;overflow:auto;box-shadow:0 -20px 50px rgba(0,0,0,.35);
+  padding-block:8px calc(env(safe-area-inset-bottom,0px) + 18px);
+  padding-left:max(18px,env(safe-area-inset-left,0px));padding-right:max(18px,env(safe-area-inset-right,0px))}
+.sheet.open{transform:translate(-50%,0)}
+.grab{width:40px;height:4px;border-radius:2px;background:var(--line);margin:4px auto 12px}
+.sh-head{display:flex;align-items:center;gap:12px}
+.badge{width:44px;height:44px;border-radius:12px;flex:none;display:grid;place-items:center;font-family:var(--display);font-weight:800;color:#fff;font-size:18px}
+.sh-head h2{margin:0;font-family:var(--display);font-size:21px;line-height:1.15;text-wrap:balance}
+.sh-head .sub{color:var(--muted);font-size:13px}
+.sh-head>div{min-width:0}
+.x{margin-inline-start:auto;border:1px solid var(--line);background:transparent;border-radius:10px;width:36px;height:36px;font-size:18px;flex:none}
+.sec{margin-top:18px}
+.sec h3{margin:0 0 8px;font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;display:flex;justify-content:space-between;gap:8px}
+.sec h3 span{font-family:var(--mono);letter-spacing:0;text-transform:none}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+.prog{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:10px}
+.prog i{display:block;height:100%;background:var(--ok);transition:width .6s}
+.field{width:100%;border:1px solid var(--line);background:var(--field);border-radius:10px;padding:9px 11px;font-size:15px}
+.goal{font-size:15px}
+.tasks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.task{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:12px;padding:8px 10px}
+.task input[type=checkbox]{width:20px;height:20px;accent-color:var(--ok);flex:none}
+.task .tx{flex:1;min-width:0;font-size:14.5px;overflow-wrap:anywhere}
+.task.done .tx{text-decoration:line-through;color:var(--muted)}
+.task .due{font-family:var(--mono);font-size:11.5px;color:var(--muted);display:block}
+.task .due.late{color:var(--err)}
+.task.urgent{border-color:var(--err)}
+.ib{border:0;background:transparent;width:30px;height:30px;border-radius:8px;color:var(--muted);flex:none;font-size:15px}
+.ib[aria-pressed="true"]{color:var(--err)}
+.addform{display:grid;grid-template-columns:1fr auto;gap:6px;margin-top:8px}
+.addform .opts{grid-column:1/-1;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.addform .opts input[type=date]{border:1px solid var(--line);background:var(--field);border-radius:8px;padding:5px 8px;font-size:13px}
+.addform .opts label{display:inline-flex;align-items:center;gap:6px}
+.row{display:flex;gap:6px;flex-wrap:wrap}
+.sug{border:1px dashed var(--line);background:transparent;border-radius:999px;padding:6px 11px;font-size:13px}
+.sw-row{display:flex;gap:8px;flex-wrap:wrap}
+.sw-row button{width:30px;height:30px;border-radius:9px;border:2px solid transparent}
+.sw-row button[aria-pressed="true"]{border-color:var(--fg)}
+.plain{border:1px solid var(--line);background:transparent;border-radius:10px;padding:8px 12px;font-size:13px}
+.plain.danger{color:var(--err)}
+.empty{color:var(--muted);font-size:14px;margin:0}
+.catalog{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.catalog button{text-align:start;border:1px solid var(--line);background:transparent;border-radius:12px;padding:10px;display:flex;gap:10px;align-items:center}
+.catalog .badge{width:32px;height:32px;font-size:14px;border-radius:9px}
+.catalog small{display:block;color:var(--muted);font-size:12px}
+.custom{display:flex;flex-direction:column;gap:8px}
+.custom select{border:1px solid var(--line);background:var(--field);border-radius:10px;padding:9px 11px}
+.custom select option{background:var(--panel-solid)}
+.note{font-size:12px;color:var(--muted);margin-top:16px}
+.hint{position:fixed;z-index:4;left:50%;top:50%;transform:translate(-50%,-50%);background:var(--panel);border:1px solid var(--line);
+  padding:8px 14px;border-radius:999px;font-size:13px;pointer-events:none;transition:opacity .6s;white-space:nowrap}
+@media (prefers-reduced-motion:reduce){.sheet{transition:none}.s-error .dot{animation:none}}
+</style>
+
+<div id="stage"></div>
+<div id="labels"></div>
+
+<header class="hud top">
+  <div class="brand">
+    <h1 id="h1"></h1>
+    <p id="subtitle"></p>
+  </div>
+  <div class="meta" id="meta"></div>
+  <div class="chips" id="chips"></div>
+</header>
+
+<div class="hint" id="hint"></div>
+
+<footer class="hud bottom">
+  <div class="ticker" id="ticker"></div>
+  <div class="bar">
+    <button class="btn" id="btnDay"></button>
+    <button class="btn" id="btnLang"></button>
+    <button class="btn" id="btnReset"></button>
+    <button class="btn primary" id="btnAdd"></button>
+  </div>
+</footer>
+
+<section class="sheet" id="sheet" role="dialog" aria-modal="false" aria-labelledby="shTitle"><div class="grab"></div><div id="sheetBody"></div></section>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(() => {
+// ---------- life areas ----------
+const AREAS = {
+  health:{order:0,color:'#ef4444',kind:'gym',initial:'H',
+    name:{en:'Health & Fitness',ar:'الصحة واللياقة'},role:{en:'Health coach',ar:'مدرب الصحة'},
+    sug:[['Gym 3 times this week','نادي 3 مرات هالأسبوع'],['Drink 2L of water a day','اشرب لترين ماء يوميًا'],['Sleep before midnight','نام قبل 12'],['Book a checkup','احجز فحص طبي']]},
+  money:{order:1,color:'#22c55e',kind:'coins',initial:'$',
+    name:{en:'Money',ar:'الفلوس'},role:{en:'Money manager',ar:'مدير الفلوس'},
+    sug:[['Track this month\'s spending','تابع مصاريف هالشهر'],['Save 10% of my salary','وفّر 10% من الراتب'],['Pay off the credit card','سدد البطاقة'],['Cancel unused subscriptions','الغِ الاشتراكات اللي ما تستخدمها']]},
+  career:{order:2,color:'#3b82f6',kind:'trophy',initial:'W',
+    name:{en:'Work & Career',ar:'العمل والمسيرة'},role:{en:'Career manager',ar:'مدير المسيرة'},
+    sug:[['Update my CV','حدّث السيرة الذاتية'],['Finish the weekly report','خلّص التقرير الأسبوعي'],['Ask my manager for feedback','اطلب رأي المدير'],['Learn one new work tool','تعلّم أداة شغل جديدة']]},
+  learning:{order:3,color:'#a855f7',kind:'books',initial:'L',
+    name:{en:'Learning',ar:'التعلّم'},role:{en:'Learning coach',ar:'مدرب التعلّم'},
+    sug:[['Read 20 pages','اقرأ 20 صفحة'],['Finish one course lesson','خلّص درس من الكورس'],['Practice English for 15 min','تمرّن إنجليزي 15 دقيقة']]},
+  family:{order:4,color:'#ec4899',kind:'people',initial:'F',
+    name:{en:'Family',ar:'العائلة'},role:{en:'Family keeper',ar:'مسؤول العائلة'},
+    sug:[['Call mom','اتصل على الوالدة'],['Family dinner on Friday','عشاء عائلي يوم الجمعة'],['Visit the grandparents','زور الجد والجدة']]},
+  mind:{order:5,color:'#14b8a6',kind:'zen',initial:'M',
+    name:{en:'Mind & Peace',ar:'الذهن والراحة'},role:{en:'Mind coach',ar:'مدرب الذهن'},
+    sug:[['10 minutes of quiet time','10 دقائق هدوء'],['Write in my journal tonight','اكتب يومياتك الليلة'],['No phone after 11 pm','بدون جوال بعد 11']]},
+  home:{order:6,color:'#f59e0b',kind:'sofa',initial:'B',
+    name:{en:'Home',ar:'البيت'},role:{en:'Home manager',ar:'مدير البيت'},
+    sug:[['Tidy my room','رتّب الغرفة'],['Get the AC serviced','صيانة المكيف'],['Buy groceries','اشتر أغراض البيت']]},
+  fun:{order:7,color:'#6366f1',kind:'globe',initial:'T',
+    name:{en:'Fun & Travel',ar:'الترفيه والسفر'},role:{en:'Fun planner',ar:'منظم الطلعات'},
+    sug:[['Plan a weekend trip','خطط لطلعة نهاية الأسبوع'],['Movie night with friends','فلم مع الربع'],['Try a new café','جرّب مقهى جديد']]},
+};
+const PRESETS = {
+  friends:{color:'#f97316',kind:'people',initial:'R',name:{en:'Friends',ar:'الربع'},role:{en:'Social planner',ar:'منظم الجمعات'},
+    sug:[['Message an old friend','راسل صديق قديم'],['Plan a gathering','رتّب جمعة']]},
+  projects:{color:'#0ea5e9',kind:'machine',initial:'P',name:{en:'Side Projects',ar:'المشاريع الجانبية'},role:{en:'Project builder',ar:'باني المشاريع'},
+    sug:[['Write down 3 project ideas','اكتب 3 أفكار مشاريع'],['Work 1 hour on my project','اشتغل ساعة على مشروعي']]},
+  car:{color:'#64748b',kind:'car',initial:'C',name:{en:'Car',ar:'السيارة'},role:{en:'Car keeper',ar:'مسؤول السيارة'},
+    sug:[['Oil change','غيّر الزيت'],['Renew the registration','جدد الملكية'],['Car wash','غسيل السيارة']]},
+  faith:{color:'#10b981',kind:'zen',initial:'S',name:{en:'Faith',ar:'الروحانيات'},role:{en:'Faith companion',ar:'رفيق الروح'},
+    sug:[]},
+};
+const KINDS = {gym:['Gym','نادي'],coins:['Coins','عملات'],trophy:['Trophy','كأس'],books:['Books','كتب'],people:['People','ناس'],
+  zen:['Calm corner','ركن هادئ'],sofa:['Sofa','كنبة'],globe:['Globe','كرة أرضية'],machine:['Workshop','ورشة'],car:['Car','سيارة'],crates:['Boxes','صناديق']};
+const SWATCHES = ['#ef4444','#f97316','#f59e0b','#84cc16','#22c55e','#14b8a6','#0ea5e9','#3b82f6','#6366f1','#a855f7','#ec4899','#64748b'];
+
+const T = {
+  en:{h1:'Life <b>HQ</b>',sub:'Every part of your life gets its own room',
+      meta:(a,o,e)=>`${a} areas · ${o} open tasks · ${e} need you`,
+      st:{working:'In progress',idle:'Empty',done:'All done',error:'Needs you'},
+      day:'Day',night:'Night',lang:'عربي',reset:'Recenter',add:'+ Add room',
+      goal:'Goal',goalPh:'What do you want here? e.g. lose 5 kg by March',tasks:'Tasks',addPh:'Add a task…',addBtn:'Add',
+      due:'Due',urgent:'Urgent',ideas:'Ideas to start with',noTasks:'No tasks yet. Add one below or tap an idea.',
+      clear:'Clear done',settings:'Room',rename:'Room name',color:'Color',remove:'Remove room',removeSure:'Tap again to remove',
+      addT:'Add a room',addD:'Pick a ready room or make your own.',own:'Make your own',ownName:'Name, e.g. Gym, Studies, Wedding',prop:'Furniture',create:'Create room',
+      close:'Close',del:'Delete task',flag:'Mark urgent',late:'late',today:'today',
+      tickEmpty:'Tap a room to add your first task',tickDone:'Done',hint:'Drag to rotate · pinch to zoom · tap a room',
+      saveCloud:'Saved to your account. Only you can see it.',saveLocal:'Saved on this device only.',saveFail:'Could not reach your saved data, so changes stay on this device for now.'},
+  ar:{h1:'مقر <b>حياتي</b>',sub:'كل جزء من حياتك له غرفة',
+      meta:(a,o,e)=>`${a} غرف · ${o} مهام مفتوحة · ${e} تحتاجك`,
+      st:{working:'شغّال',idle:'فاضي',done:'خلّص',error:'يحتاجك'},
+      day:'نهاري',night:'ليلي',lang:'EN',reset:'توسيط',add:'+ أضف غرفة',
+      goal:'الهدف',goalPh:'وش تبي توصل له؟ مثلًا: أنزل 5 كيلو قبل مارس',tasks:'المهام',addPh:'أضف مهمة…',addBtn:'أضف',
+      due:'الموعد',urgent:'عاجل',ideas:'أفكار للبداية',noTasks:'ما فيه مهام بعد. أضف وحدة تحت أو اختر فكرة.',
+      clear:'امسح المنجز',settings:'الغرفة',rename:'اسم الغرفة',color:'اللون',remove:'احذف الغرفة',removeSure:'اضغط مرة ثانية للحذف',
+      addT:'أضف غرفة',addD:'اختر غرفة جاهزة أو سوّ غرفتك.',own:'سوّ غرفتك',ownName:'الاسم، مثلًا: الجيم، الدراسة، العرس',prop:'الأثاث',create:'سوّ الغرفة',
+      close:'إغلاق',del:'احذف المهمة',flag:'عاجل',late:'متأخر',today:'اليوم',
+      tickEmpty:'اضغط على غرفة وأضف أول مهمة',tickDone:'تم',hint:'اسحب للتدوير · قرّب بإصبعين · اضغط على غرفة',
+      saveCloud:'محفوظ في حسابك. أنت بس تشوفه.',saveLocal:'محفوظ على هذا الجهاز فقط.',saveFail:'ما قدرنا نوصل لبياناتك المحفوظة، فالتعديلات على هذا الجهاز حاليًا.'}
+};
+
+// ---------- prefs (per device) ----------
+const pref = { get(k,d){try{const v=localStorage.getItem('lifehq:'+k);return v!=null?JSON.parse(v):d}catch(e){return d}},
+               set(k,v){try{localStorage.setItem('lifehq:'+k,JSON.stringify(v))}catch(e){}} };
+let lang = pref.get('lang','en');
+const hr = new Date().getHours();
+let night = pref.get('night', hr>=18 || hr<6);
+let filter = null;
+
+// ---------- data ----------
+// saved[id] = {goal, tasks:[{id,text,done,due,urgent,doneAt}], title, color, kind, hidden, custom, order, preset}
+let saved = {};
+const dirty = {};
+let mode = 'loading'; // cloud | local | fail
+let col = null;
+const writing = {}, pending = {};
+const clone = o => JSON.parse(JSON.stringify(o||{}));
+const uid = () => Math.random().toString(36).slice(2,9);
+
+function loadLocal(){ saved = pref.get('data',{}); }
+function persist(id){
+  if(mode!=='cloud'){ pref.set('data',saved); return; }
+  dirty[id]=true;
+  if(writing[id]){ pending[id]=true; return; }
+  writing[id]=true;
+  const ref=col.doc(id);
+  const p = saved[id] ? ref.set(clone(saved[id])) : ref.delete();
+  p.catch(()=>{}).finally(()=>{ writing[id]=false;
+    if(pending[id]){ pending[id]=false; persist(id); } else delete dirty[id]; });
+}
+async function initStore(){
+  let c=window.claude;
+  for(let i=0;i<10 && !(c&&c.use);i++){ await new Promise(r=>setTimeout(r,200)); c=window.claude; }
+  if(!(c&&c.use)){ mode='local'; loadLocal(); refresh(); return; }
+  try{
+    const [db,user]=await Promise.all([c.use('db'),c.use('user')]);
+    const id = user ? await user.id() : null;
+    if(!db||!id){ mode='local'; loadLocal(); refresh(); return; }
+    col=db.collection('data/users/'+id);
+    let first=true;
+    const timer=setTimeout(()=>{ if(first){ mode='fail'; loadLocal(); refresh(); } },10000);
+    col.onSnapshot(snap=>{
+      clearTimeout(timer);
+      if(first && mode==='fail'){ /* late answer: switch to cloud */ }
+      first=false; mode='cloud';
+      const next={}; snap.docs.forEach(d=>{ next[d.id]=clone(d.data()); });
+      Object.keys(dirty).forEach(k=>{ if(saved[k]) next[k]=saved[k]; else delete next[k]; });
+      saved=next; refresh();
+    },()=>{ clearTimeout(timer); if(first){ mode='fail'; loadLocal(); refresh(); } });
+  }catch(e){ mode='local'; loadLocal(); refresh(); }
+}
+
+function area(id){
+  const base=AREAS[id]||PRESETS[(saved[id]||{}).preset]||{};
+  const s=saved[id]||{};
+  return {id, color:s.color||base.color||'#64748b', kind:s.kind||base.kind||'crates',
+    title:s.title||(base.name?base.name[lang]:'Room'), role:base.role?base.role[lang]:(lang==='ar'?'مساعدك':'Your helper'),
+    initial:(s.title?[...s.title.trim()][0]||'•':base.initial||'•').toUpperCase(),
+    sug:base.sug||[], goal:s.goal||'', tasks:s.tasks||[], custom:!AREAS[id], order:s.order!=null?s.order:(base.order!=null?base.order:99)};
+}
+function ids(){
+  const all=new Set([...Object.keys(AREAS),...Object.keys(saved)]);
+  return [...all].filter(k=>!(saved[k]&&saved[k].hidden) && (AREAS[k]||saved[k]&&saved[k].custom))
+    .sort((a,b)=>area(a).order-area(b).order);
+}
+const todayStr=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+function status(a){
+  if(!a.tasks.length) return 'idle';
+  const open=a.tasks.filter(t=>!t.done);
+  if(open.some(t=>t.urgent||(t.due&&t.due<todayStr()))) return 'error';
+  return open.length?'working':'done';
+}
+function edit(id,fn){ saved[id]=clone(saved[id]); fn(saved[id]); persist(id); refresh(); }
+
+// ---------- three ----------
+const stage=document.getElementById('stage');
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+stage.appendChild(renderer.domElement);
+const scene=new THREE.Scene();
+const camera=new THREE.OrthographicCamera(-1,1,1,-1,-200,400);
+const controls=new THREE.OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true; controls.dampingFactor=.08;
+controls.minPolarAngle=.55; controls.maxPolarAngle=1.25;
+controls.minAzimuthAngle=.05; controls.maxAzimuthAngle=1.5;
+controls.minZoom=.6; controls.maxZoom=4; controls.screenSpacePanning=true;
+const hemi=new THREE.HemisphereLight(0xffffff,0x334,.6); scene.add(hemi);
+const sun=new THREE.DirectionalLight(0xffffff,.6); sun.position.set(10,20,14); scene.add(sun);
+
+const W=6,D=5,H=3.4;
+const mat=c=>new THREE.MeshLambertMaterial({color:c});
+const box=(w,h,d,c)=>new THREE.Mesh(new THREE.BoxGeometry(w,h,d),typeof c==='object'?c:mat(c));
+const building=new THREE.Group(); scene.add(building);
+let rooms={}, ghost=null, floors=0, slabs=[], walls=[];
+
+function makeChar(color){
+  const g=new THREE.Group();
+  const skin=mat('#e9b98e'), cloth=mat(color), dark=mat('#2a2440');
+  const legs=box(.5,.22,.4,dark); legs.position.set(.15,.62,0); g.add(legs);
+  const body=box(.42,.6,.5,cloth); body.position.set(-.05,1.05,0); g.add(body);
+  const head=new THREE.Group(); head.position.set(-.02,1.62,0); g.add(head);
+  head.add(box(.5,.5,.5,skin));
+  const hair=box(.54,.16,.54,mat('#2e221c')); hair.position.y=.24; head.add(hair);
+  [-.12,.12].forEach(z=>{const e=box(.04,.08,.07,'#111'); e.position.set(.26,.04,z); head.add(e);});
+  const arms=[-.3,.3].map(z=>{const p=new THREE.Group(); p.position.set(-.02,1.28,z);
+    const a=box(.5,.14,.14,cloth); a.position.x=.22; p.add(a); g.add(p); return p;});
+  return {g,head,arms};
+}
+function makePlant(){ const g=new THREE.Group(); const pot=new THREE.Mesh(new THREE.CylinderGeometry(.2,.16,.35,10),mat('#e8e2d8')); pot.position.y=.17; g.add(pot);
+  for(let i=0;i<6;i++){ const l=new THREE.Mesh(new THREE.SphereGeometry(.17,8,6),mat('#3f9b5a')); l.position.set(Math.cos(i)*.15,.5+(i%3)*.15,Math.sin(i)*.15); g.add(l);} return g; }
+function makeProp(kind,color){
+  const g=new THREE.Group(); const c=mat(color);
+  if(kind==='gym'){ const bench=box(1.4,.12,.45,'#333a55'); bench.position.y=.5; g.add(bench);
+    [-.55,.55].forEach(x=>{const l=box(.1,.45,.4,'#222'); l.position.set(x,.23,0); g.add(l);});
+    const bar=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,1.6,8),mat('#bbb')); bar.rotation.x=Math.PI/2; bar.position.set(0,1.2,0); g.add(bar);
+    [-.7,.7].forEach(z=>{const p=new THREE.Mesh(new THREE.CylinderGeometry(.28,.28,.12,14),c); p.rotation.x=Math.PI/2; p.position.set(0,1.2,z); g.add(p);});
+    [-.75,.75].forEach(x=>{const s=box(.08,1.2,.08,'#555'); s.position.set(x*.8,.6,-.7); g.add(s); const s2=s.clone(); s2.position.z=.7; g.add(s2);});
+    g.userData.bar=[bar,...g.children.filter(o=>o.geometry&&o.geometry.type==='CylinderGeometry'&&o!==bar)]; }
+  else if(kind==='coins'){ for(let i=0;i<4;i++){ for(let j=0;j<2+i*2;j++){ const coin=new THREE.Mesh(new THREE.CylinderGeometry(.18,.18,.07,14),mat('#f2c14e')); coin.position.set(-.5+i*.38,.04+j*.075,0); g.add(coin);} }
+    const safe=box(.7,.8,.6,'#4b5563'); safe.position.set(.2,.4,-.9); g.add(safe); const dial=new THREE.Mesh(new THREE.CylinderGeometry(.1,.1,.05,12),c); dial.rotation.x=Math.PI/2; dial.position.set(.2,.45,-.58); g.add(dial); }
+  else if(kind==='trophy'){ const cup=new THREE.Mesh(new THREE.CylinderGeometry(.3,.12,.5,12),mat('#f2c14e')); cup.position.y=1.05; g.add(cup);
+    const base=box(.4,.2,.4,'#3b2f2a'); base.position.y=.7; g.add(base); const ped=box(.6,.6,.6,'#5a4f6b'); ped.position.y=.3; g.add(ped); g.userData.spin=cup; }
+  else if(kind==='books'){ for(let s=0;s<3;s++){ const p=box(1.6,.06,.5,'#8a6a4d'); p.position.y=.2+s*.65; g.add(p);
+      for(let i=0;i<8;i++){ const h=.35+((i*7+s*3)%4)*.05; const b=box(.14,h,.38,[color,'#e5e7eb','#f2c14e','#94a3b8'][(i+s)%4]); b.position.set(-.65+i*.18,.23+h/2+s*.65,0); g.add(b);} }
+    [-.78,.78].forEach(x=>{const l=box(.06,1.6,.5,'#6d5038'); l.position.set(x,.8,0); g.add(l);}); }
+  else if(kind==='people'){ for(let i=0;i<2;i++){ const p=makeChar(['#94a3b8',color][i]).g; p.scale.setScalar(.75); p.position.set(i*.8,-.3,i*.5-.3); p.rotation.y=Math.PI*.9; g.add(p);} const pl=makePlant(); pl.position.set(-.6,0,.6); g.add(pl); }
+  else if(kind==='zen'){ const rug=box(1.4,.04,.9,c); rug.position.y=.03; g.add(rug); const cush=box(.5,.14,.5,'#f5f5f4'); cush.position.set(0,.12,0); g.add(cush);
+    const cand=new THREE.Mesh(new THREE.CylinderGeometry(.06,.06,.25,8),mat('#fef3c7')); cand.position.set(.55,.15,-.3); g.add(cand);
+    const flame=new THREE.Mesh(new THREE.SphereGeometry(.05,6,6),new THREE.MeshBasicMaterial({color:'#fbbf24'})); flame.position.set(.55,.33,-.3); g.add(flame); g.userData.flame=flame;
+    const pl=makePlant(); pl.position.set(-.7,0,-.5); g.add(pl); }
+  else if(kind==='sofa'){ const pl=makePlant(); pl.position.set(.7,0,.6); g.add(pl); const sofa=box(1.4,.4,.6,color); sofa.position.set(0,.2,-.4); g.add(sofa);
+    const back=box(1.4,.5,.15,color); back.position.set(0,.55,-.65); g.add(back); const tv=box(.9,.55,.05,'#111'); tv.position.set(0,1.5,.8); g.add(tv); }
+  else if(kind==='globe'){ const s=new THREE.Mesh(new THREE.IcosahedronGeometry(.55,1),new THREE.MeshLambertMaterial({color,wireframe:true})); s.position.y=1.1; g.add(s); g.userData.spin=s;
+    const st=box(.1,.6,.1,'#888'); st.position.y=.3; g.add(st); const bag=box(.5,.6,.3,'#7c4a2d'); bag.position.set(.7,.3,.4); g.add(bag); }
+  else if(kind==='machine'){ const m=box(1.2,1.1,1,'#56607a'); m.position.y=.6; g.add(m);
+    const gear=new THREE.Mesh(new THREE.TorusGeometry(.32,.1,6,10),c); gear.position.set(0,1.45,0); g.add(gear); g.userData.spin=gear; }
+  else if(kind==='car'){ const b=box(1.8,.45,.9,c); b.position.y=.42; g.add(b); const cab=box(.9,.4,.8,'#cbd5e1'); cab.position.set(-.1,.85,0); g.add(cab);
+    [[-.6,-.45],[.6,-.45],[-.6,.45],[.6,.45]].forEach(([x,z])=>{const w=new THREE.Mesh(new THREE.CylinderGeometry(.2,.2,.12,12),mat('#111')); w.rotation.x=Math.PI/2; w.position.set(x,.2,z); g.add(w);}); g.rotation.y=.3; }
+  else { for(let i=0;i<5;i++){ const b=box(.55,.45,.55,i%2?'#c9a26b':'#a77f4f'); b.position.set((i%3)*.6-.6,.23+Math.floor(i/3)*.46,0); g.add(b);} }
+  return g;
+}
+
+const labelsEl=document.getElementById('labels');
+function makeRoom(id,i){
+  const a=area(id); const f=Math.floor(i/2), col=i%2;
+  const g=new THREE.Group(); g.position.set((col-.5)*W,f*H,0); building.add(g);
+  const rug=box(W-.5,.04,D-.6,new THREE.MeshLambertMaterial({color:new THREE.Color(a.color).multiplyScalar(.75)})); rug.position.set(0,.14,0); g.add(rug);
+  const back=box(W,H-.25,.14,mat('#222a5c')); back.position.set(0,H/2,-D/2); g.add(back);
+  const left=box(.14,H-.25,D,mat('#1d2452')); left.position.set(-W/2,H/2,0); g.add(left); walls.push(back,left);
+  const stripe=box(W-.2,.08,.05,new THREE.MeshBasicMaterial({color:a.color})); stripe.position.set(0,H-.4,-D/2+.1); g.add(stripe);
+  // window on back wall: shows sky
+  const win=new THREE.Mesh(new THREE.PlaneGeometry(1.8,1),new THREE.MeshBasicMaterial({color:0x1e2a6e})); win.position.set(.7,1.95,-D/2+.08); g.add(win);
+  const desk=box(.9,.08,1.5,'#c89b6d'); desk.position.set(-.5,.82,.6); g.add(desk);
+  [[-.85,0],[-.15,0],[-.85,1.2],[-.15,1.2]].forEach(([x,z])=>{const l=box(.07,.78,.07,'#7a5a3c'); l.position.set(x,.43,z); g.add(l);});
+  const lap=box(.06,.45,.7,'#1b1b2b'); lap.position.set(-.3,1.1,.6); g.add(lap);
+  const scr=new THREE.Mesh(new THREE.PlaneGeometry(.62,.38),new THREE.MeshBasicMaterial({color:a.color})); scr.rotation.y=-Math.PI/2; scr.position.set(-.34,1.1,.6); g.add(scr);
+  const chair=box(.55,.1,.55,'#333a66'); chair.position.set(-1.65,.55,.6); g.add(chair);
+  const chairB=box(.1,.7,.55,'#333a66'); chairB.position.set(-1.95,.95,.6); g.add(chairB);
+  const ch=makeChar(a.color); ch.g.position.set(-1.6,-.05,.6); g.add(ch.g);
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(.22,.045,8,24,Math.PI*1.5),new THREE.MeshBasicMaterial({color:0x34d399})); ring.position.set(-1.6,2.25,.6); g.add(ring);
+  const prop=makeProp(a.kind,a.color); prop.position.set(1.6,.15,-.9); g.add(prop);
+  const lamp=new THREE.PointLight(0xffd9a8,.8,7,2); lamp.position.set(0,H-.6,.6); g.add(lamp);
+  const hit=new THREE.Mesh(new THREE.BoxGeometry(W,H,D),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false})); hit.position.set(0,H/2,0); hit.userData.room=id; g.add(hit);
+  const tag=document.createElement('button'); tag.className='tag'; tag.onclick=()=>openArea(id); labelsEl.appendChild(tag);
+  return {id,g,ch,ring,prop,lamp,hit,tag,scr,win,color:a.color,anchor:new THREE.Vector3((col-.5)*W+W*.18,f*H+H-.15,D/2)};
+}
+function slab(y){ const s=box(W*2+.3,.25,D+.3,mat('#2b3170')); s.position.set(0,y,0); building.add(s);
+  const e=new THREE.LineSegments(new THREE.EdgesGeometry(s.geometry),new THREE.LineBasicMaterial({color:0x8f86ff,transparent:true,opacity:.7})); e.position.copy(s.position); building.add(e);
+  s.userData.edge=e; return s; }
+
+let sig='';
+function build(){
+  building.clear(); labelsEl.innerHTML=''; rooms={}; slabs=[]; walls=[];
+  const list=ids();
+  floors=Math.ceil((list.length+1)/2);
+  for(let f=0;f<=floors;f++) slabs.push(slab(f*H-.12));
+  list.forEach((id,i)=>rooms[id]=makeRoom(id,i));
+  const i=list.length, f=Math.floor(i/2), col=i%2;
+  const geo=new THREE.BoxGeometry(W-.6,H-.6,D-.6);
+  const ln=new THREE.LineSegments(new THREE.EdgesGeometry(geo),new THREE.LineDashedMaterial({color:0xa6abd8,dashSize:.25,gapSize:.18}));
+  ln.computeLineDistances(); ln.position.set((col-.5)*W,f*H+H/2,0); building.add(ln);
+  const pm=new THREE.MeshBasicMaterial({color:0xa6abd8});
+  const plus=new THREE.Group(); plus.add(box(.9,.16,.16,pm)); plus.add(box(.16,.9,.16,pm)); plus.position.copy(ln.position); building.add(plus);
+  const hit=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false})); hit.position.copy(ln.position); hit.userData.room='__add'; building.add(hit);
+  const tag=document.createElement('button'); tag.className='tag add'; tag.onclick=openAdd; labelsEl.appendChild(tag);
+  ghost={plus,hit,tag,anchor:new THREE.Vector3((col-.5)*W+W*.18,f*H+H-.15,D/2)};
+  applyMode();
+}
+function structureSig(){ return ids().map(id=>{const a=area(id);return id+a.kind+a.color;}).join('|'); }
+
+let fitH=20;
+function fit(reset){
+  const w=innerWidth,h=innerHeight; renderer.setSize(w,h);
+  const aspect=w/h, bh=floors*H;
+  fitH=Math.max(bh*1.12+4,12.5/aspect);
+  camera.left=-fitH*aspect/2; camera.right=fitH*aspect/2; camera.top=fitH/2; camera.bottom=-fitH/2;
+  camera.updateProjectionMatrix();
+  if(reset){ const cy=bh/2-fitH*.04; controls.target.set(0,cy,0); camera.position.set(30,cy+22,30); camera.zoom=1; camera.updateProjectionMatrix(); controls.update(); }
+}
+addEventListener('resize',()=>fit(false));
+
+function applyMode(){
+  document.body.classList.toggle('day',!night);
+  scene.background=new THREE.Color(night?0x0e1130:0xdce7f3);
+  hemi.intensity=night?.45:.95; hemi.color.set(night?0x9aa0ff:0xffffff); hemi.groundColor.set(night?0x1a1840:0x8899aa);
+  sun.intensity=night?.15:.75;
+  Object.values(rooms).forEach(r=>{ r.lamp.intensity=night?1.1:.25; r.win.material.color.set(night?0x1e2a6e:0x9fd3ff); });
+  slabs.forEach(s=>{ s.material.color.set(night?0x2b3170:0xf3f4f8); s.userData.edge.material.color.set(night?0x8f86ff:0xc2652a); s.userData.edge.material.opacity=night?.75:.35; });
+  walls.forEach((w,i)=>w.material.color.set(night?(i%2?0x1d2452:0x222a5c):(i%2?0xd9deee:0xe9ecf5)));
+}
+
+// ---------- UI ----------
+const $=id=>document.getElementById(id);
+const t=()=>T[lang];
+const L=p=>lang==='ar'?p[1]:p[0];
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const statusColor={working:0x34d399,idle:0x9aa3c7,done:0x60a5fa,error:0xfb7185};
+
+function refresh(){
+  const s=structureSig();
+  if(s!==sig){ const first=!sig; sig=s; build(); fit(first); }
+  renderUI();
+}
+function renderUI(){
+  document.documentElement.lang=lang; document.documentElement.dir=lang==='ar'?'rtl':'ltr';
+  $('h1').innerHTML=t().h1; $('subtitle').textContent=t().sub;
+  const list=ids(); const counts={working:0,idle:0,done:0,error:0}; let open=0;
+  list.forEach(id=>{const a=area(id); counts[status(a)]++; open+=a.tasks.filter(x=>!x.done).length;});
+  $('meta').textContent=t().meta(list.length,open,counts.error);
+  $('chips').innerHTML=['working','error','done','idle'].map(s=>
+    `<button class="chip s-${s}" data-s="${s}" aria-pressed="${filter===s}"><span class="dot"></span>${t().st[s]} <span class="n">${counts[s]}</span></button>`).join('');
+  $('chips').querySelectorAll('.chip').forEach(b=>b.onclick=()=>{filter=filter===b.dataset.s?null:b.dataset.s;renderUI();});
+  $('btnDay').textContent=night?'☀ '+t().day:'☾ '+t().night;
+  $('btnLang').textContent=t().lang; $('btnReset').textContent=t().reset; $('btnAdd').textContent=t().add;
+  list.forEach(id=>{ const r=rooms[id]; if(!r) return; const a=area(id), s=status(a);
+    const n=a.tasks.length, d=a.tasks.filter(x=>x.done).length;
+    r.tag.className='tag s-'+s+(filter&&filter!==s?' dim':'');
+    r.tag.innerHTML=`<span class="dot"></span><span>${esc(a.title)}</span>${n?`<span class="c">${d}/${n}</span>`:''}<span class="sw" style="background:${a.color}"></span>`;
+    r.tag.setAttribute('aria-label',a.title+', '+t().st[s]); });
+  if(ghost) ghost.tag.textContent=t().add;
+  let last=null; list.forEach(id=>area(id).tasks.forEach(x=>{ if(x.done&&x.doneAt&&(!last||x.doneAt>last.at)) last={at:x.doneAt,text:x.text,area:area(id).title}; }));
+  $('ticker').textContent=last?`✓ ${t().tickDone}: ${last.text} · ${last.area}`:t().tickEmpty;
+  $('hint').textContent=t().hint;
+  if(openId) (openId==='__add'?renderAdd():(rooms[openId]?renderArea(openId):closeSheet()));
+}
+
+// sheet
+let openId=null, removeArmed=false;
+const sheet=$('sheet'), body=$('sheetBody');
+function openArea(id){ openId=id; removeArmed=false; renderArea(id); sheet.classList.add('open'); }
+function openAdd(){ openId='__add'; renderAdd(); sheet.classList.add('open'); }
+function closeSheet(){ sheet.classList.remove('open'); openId=null; }
+function keepFocus(fn){ const a=document.activeElement, fid=a&&a.id, v=a&&a.value, sel=a&&a.selectionStart; fn();
+  if(fid){ const n=document.getElementById(fid); if(n){ n.focus(); if(v!=null&&n.value!==undefined&&n.type==='text'){ n.value=v; try{n.setSelectionRange(sel,sel);}catch(e){} } } } }
+
+function renderArea(id){ keepFocus(()=>{
+  const a=area(id), s=status(a), n=a.tasks.length, d=a.tasks.filter(x=>x.done).length, today=todayStr();
+  const tasks=[...a.tasks].sort((x,y)=>(x.done-y.done)||((y.urgent?1:0)-(x.urgent?1:0))||String(x.due||'9').localeCompare(String(y.due||'9')));
+  const draft=body.querySelector('#newTask')?.value||'';
+  const sugs=a.sug.filter(p=>!a.tasks.some(x=>x.text===L(p)));
+  body.innerHTML=`
+  <div class="sh-head"><div class="badge" style="background:${a.color}">${esc(a.initial)}</div>
+    <div><h2 id="shTitle">${esc(a.title)}</h2><div class="sub">${esc(a.role)}</div></div>
+    <button class="x" aria-label="${t().close}" data-close>×</button></div>
+  <div class="sec"><span class="pill s-${s}"><span class="dot"></span>${t().st[s]}</span>
+    <div class="prog"><i style="width:${n?Math.round(d/n*100):0}%"></i></div></div>
+  <div class="sec"><h3>${t().goal}</h3><input class="field goal" id="goalIn" type="text" value="${esc(a.goal)}" placeholder="${esc(t().goalPh)}"></div>
+  <div class="sec"><h3>${t().tasks}<span>${d}/${n}</span></h3>
+    ${n?`<ul class="tasks">${tasks.map(x=>{const late=x.due&&!x.done&&x.due<today;
+      return `<li class="task${x.done?' done':''}${x.urgent&&!x.done?' urgent':''}">
+        <input type="checkbox" data-tg="${x.id}" ${x.done?'checked':''} aria-label="${esc(x.text)}">
+        <span class="tx">${esc(x.text)}${x.due?`<span class="due${late?' late':''}">${x.due===today?t().today:x.due}${late?' · '+t().late:''}</span>`:''}</span>
+        <button class="ib" data-fl="${x.id}" aria-pressed="${!!x.urgent}" aria-label="${t().flag}" title="${t().flag}">⚑</button>
+        <button class="ib" data-dl="${x.id}" aria-label="${t().del}" title="${t().del}">✕</button></li>`;}).join('')}</ul>`:`<p class="empty">${t().noTasks}</p>`}
+    <form class="addform" id="addForm">
+      <input class="field" id="newTask" type="text" placeholder="${esc(t().addPh)}" value="${esc(draft)}" autocomplete="off">
+      <button class="btn primary" type="submit">${t().addBtn}</button>
+      <div class="opts"><label>${t().due} <input type="date" id="newDue"></label><label><input type="checkbox" id="newUrgent"> ${t().urgent}</label></div>
+    </form>
+    ${d?`<div class="row" style="margin-top:8px"><button class="plain" data-clear>${t().clear}</button></div>`:''}</div>
+  ${sugs.length?`<div class="sec"><h3>${t().ideas}</h3><div class="row">${sugs.map((p,i)=>`<button class="sug" data-sug="${i}">+ ${esc(L(p))}</button>`).join('')}</div></div>`:''}
+  <div class="sec"><h3>${t().settings}</h3>
+    <div class="custom"><input class="field" id="renameIn" type="text" value="${esc(saved[id]&&saved[id].title||'')}" placeholder="${esc(a.title)}" aria-label="${t().rename}">
+    <div class="sw-row" aria-label="${t().color}">${SWATCHES.map(c=>`<button data-col="${c}" style="background:${c}" aria-pressed="${c===a.color}" aria-label="${c}"></button>`).join('')}</div>
+    <div class="row"><button class="plain danger" data-remove>${removeArmed?t().removeSure:t().remove}</button></div></div></div>
+  <p class="note">${mode==='cloud'?t().saveCloud:mode==='fail'?t().saveFail:mode==='local'?t().saveLocal:''}</p>`;
+  body.querySelector('[data-close]').onclick=closeSheet;
+  const goalIn=body.querySelector('#goalIn');
+  goalIn.onchange=()=>edit(id,o=>{o.goal=goalIn.value.trim();});
+  body.querySelector('#addForm').onsubmit=e=>{ e.preventDefault();
+    const tx=body.querySelector('#newTask').value.trim(); if(!tx) return;
+    const due=body.querySelector('#newDue').value||null, urgent=body.querySelector('#newUrgent').checked;
+    body.querySelector('#newTask').value='';
+    edit(id,o=>{o.tasks=o.tasks||[]; o.tasks.push({id:uid(),text:tx.slice(0,200),done:false,due,urgent});});
+    body.querySelector('#newTask')?.focus(); };
+  body.querySelectorAll('[data-tg]').forEach(b=>b.onchange=()=>edit(id,o=>{const x=o.tasks.find(k=>k.id===b.dataset.tg); if(x){x.done=b.checked; x.doneAt=b.checked?Date.now():null;}}));
+  body.querySelectorAll('[data-fl]').forEach(b=>b.onclick=()=>edit(id,o=>{const x=o.tasks.find(k=>k.id===b.dataset.fl); if(x) x.urgent=!x.urgent;}));
+  body.querySelectorAll('[data-dl]').forEach(b=>b.onclick=()=>edit(id,o=>{o.tasks=o.tasks.filter(k=>k.id!==b.dataset.dl);}));
+  const cl=body.querySelector('[data-clear]'); if(cl) cl.onclick=()=>edit(id,o=>{o.tasks=o.tasks.filter(k=>!k.done);});
+  body.querySelectorAll('[data-sug]').forEach(b=>b.onclick=()=>{const p=sugs[+b.dataset.sug]; edit(id,o=>{o.tasks=o.tasks||[]; o.tasks.push({id:uid(),text:L(p),done:false,due:null,urgent:false});});});
+  const rn=body.querySelector('#renameIn'); rn.onchange=()=>edit(id,o=>{const v=rn.value.trim().slice(0,40); if(v) o.title=v; else delete o.title;});
+  body.querySelectorAll('[data-col]').forEach(b=>b.onclick=()=>edit(id,o=>{o.color=b.dataset.col;}));
+  body.querySelector('[data-remove]').onclick=()=>{ if(!removeArmed){ removeArmed=true; renderArea(id); return; }
+    removeArmed=false; closeSheet();
+    if(AREAS[id]) edit(id,o=>{o.hidden=true;}); else { delete saved[id]; persist(id); refresh(); } };
+});}
+
+function renderAdd(){
+  const hiddenDefaults=Object.keys(AREAS).filter(k=>saved[k]&&saved[k].hidden);
+  const usedPresets=new Set(Object.values(saved).filter(s=>s.custom&&s.preset&&!s.hidden).map(s=>s.preset));
+  const presets=Object.keys(PRESETS).filter(k=>!usedPresets.has(k));
+  const draft=body.querySelector('#ownName')?.value||'';
+  body.innerHTML=`<div class="sh-head"><div><h2 id="shTitle">${t().addT}</h2><div class="sub">${t().addD}</div></div>
+    <button class="x" aria-label="${t().close}" data-close>×</button></div>
+    <div class="sec"><div class="catalog">
+      ${hiddenDefaults.map(k=>`<button data-restore="${k}"><span class="badge" style="background:${AREAS[k].color}">${AREAS[k].initial}</span><span>${AREAS[k].name[lang]}<small>${AREAS[k].role[lang]}</small></span></button>`).join('')}
+      ${presets.map(k=>`<button data-preset="${k}"><span class="badge" style="background:${PRESETS[k].color}">${PRESETS[k].initial}</span><span>${PRESETS[k].name[lang]}<small>${PRESETS[k].role[lang]}</small></span></button>`).join('')}
+    </div></div>
+    <div class="sec"><h3>${t().own}</h3><form class="custom" id="ownForm">
+      <input class="field" id="ownName" type="text" maxlength="40" placeholder="${esc(t().ownName)}" value="${esc(draft)}" required>
+      <label class="sub" for="ownKind">${t().prop}</label>
+      <select id="ownKind">${Object.keys(KINDS).map(k=>`<option value="${k}">${L(KINDS[k])}</option>`).join('')}</select>
+      <div class="sw-row">${SWATCHES.map((c,i)=>`<button type="button" data-oc="${c}" style="background:${c}" aria-pressed="${i===8}" aria-label="${c}"></button>`).join('')}</div>
+      <button class="btn primary" type="submit">${t().create}</button></form></div>`;
+  body.querySelector('[data-close]').onclick=closeSheet;
+  const nextOrder=()=>Math.max(7,...ids().map(i=>area(i).order))+1;
+  body.querySelectorAll('[data-restore]').forEach(b=>b.onclick=()=>{ const k=b.dataset.restore; edit(k,o=>{delete o.hidden; o.order=nextOrder();}); openArea(k); });
+  body.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>{ const k='c'+Date.now().toString(36); const p=PRESETS[b.dataset.preset];
+    edit(k,o=>{Object.assign(o,{custom:true,preset:b.dataset.preset,kind:p.kind,color:p.color,order:nextOrder(),tasks:[],goal:''});}); openArea(k); });
+  let oc=SWATCHES[8];
+  body.querySelectorAll('[data-oc]').forEach(b=>b.onclick=()=>{ oc=b.dataset.oc; body.querySelectorAll('[data-oc]').forEach(x=>x.setAttribute('aria-pressed',x===b)); });
+  body.querySelector('#ownForm').onsubmit=e=>{ e.preventDefault(); const name=body.querySelector('#ownName').value.trim(); if(!name) return;
+    const k='c'+Date.now().toString(36);
+    edit(k,o=>{Object.assign(o,{custom:true,title:name.slice(0,40),kind:body.querySelector('#ownKind').value,color:oc,order:nextOrder(),tasks:[],goal:''});}); openArea(k); };
+}
+addEventListener('keydown',e=>{ if(e.key==='Escape') closeSheet(); });
+
+$('btnDay').onclick=()=>{ night=!night; pref.set('night',night); applyMode(); renderUI(); };
+$('btnLang').onclick=()=>{ lang=lang==='en'?'ar':'en'; pref.set('lang',lang); renderUI(); };
+$('btnReset').onclick=()=>fit(true);
+$('btnAdd').onclick=openAdd;
+
+const ray=new THREE.Raycaster(), ptr=new THREE.Vector2(); let down=null;
+renderer.domElement.addEventListener('pointerdown',e=>{down={x:e.clientX,y:e.clientY};});
+renderer.domElement.addEventListener('pointerup',e=>{
+  if(!down||Math.hypot(e.clientX-down.x,e.clientY-down.y)>6) return; down=null;
+  ptr.set(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1); ray.setFromCamera(ptr,camera);
+  const targets=Object.values(rooms).map(r=>r.hit); if(ghost) targets.push(ghost.hit);
+  const hit=ray.intersectObjects(targets)[0];
+  if(hit){ hit.object.userData.room==='__add'?openAdd():openArea(hit.object.userData.room); } else closeSheet();
+});
+controls.addEventListener('start',()=>{ $('hint').style.opacity=0; });
+setTimeout(()=>{ $('hint').style.opacity=0; },4500);
+setInterval(renderUI,60000); // due dates roll over
+
+// ---------- loop ----------
+const v=new THREE.Vector3(), clock=new THREE.Clock();
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+function place(tag,anchor){ v.copy(anchor).project(camera); tag.style.transform=`translate(${(v.x+1)/2*innerWidth}px,${(1-v.y)/2*innerHeight}px) translate(-50%,-100%)`; }
+function frame(){
+  const tt=clock.getElapsedTime(); controls.update();
+  Object.values(rooms).forEach(r=>{ const s=status(area(r.id)), ch=r.ch;
+    r.ring.material.color.setHex(statusColor[s]); r.ring.visible=s!=='idle';
+    r.scr.material.color.set(s==='error'?(Math.sin(tt*6)>0?'#fb7185':'#3a0d18'):s==='idle'?'#222a44':r.color);
+    if(reduce){ ch.arms.forEach(a=>a.rotation.z=0); ch.head.rotation.set(0,0,0); }
+    else if(s==='working'){ r.ring.scale.setScalar(1); r.ring.rotation.z=-tt*4; ch.arms[0].rotation.z=Math.sin(tt*14)*.12; ch.arms[1].rotation.z=Math.cos(tt*14)*.12; ch.head.rotation.set(0,0,Math.sin(tt*2)*.05); }
+    else if(s==='error'){ r.ring.rotation.z=0; r.ring.scale.setScalar(1+Math.sin(tt*6)*.15); ch.head.rotation.set(0,Math.sin(tt*5)*.4,0); ch.arms.forEach(a=>a.rotation.z=.6); }
+    else if(s==='done'){ r.ring.rotation.z=0; r.ring.scale.setScalar(1); ch.arms.forEach((a,i)=>a.rotation.z=1.3+Math.sin(tt*3+i)*.15); ch.head.rotation.set(0,0,.1); }
+    else { ch.arms.forEach(a=>a.rotation.z=-.2); ch.head.rotation.set(0,-.5,-.15+Math.sin(tt*1.2)*.04); }
+    if(!reduce){ const u=r.prop.userData;
+      if(u.spin) u.spin.rotation.y=tt*(s==='working'?1.2:.2);
+      if(u.bar&&s==='working') u.bar.forEach(o=>o.position.y=1.2+Math.max(0,Math.sin(tt*3))*.25);
+      if(u.flame) u.flame.scale.setScalar(1+Math.sin(tt*9)*.15); }
+    place(r.tag,r.anchor); });
+  if(ghost){ place(ghost.tag,ghost.anchor); if(!reduce) ghost.plus.rotation.y=tt; }
+  renderer.render(scene,camera); requestAnimationFrame(frame);
+}
+
+refresh();
+initStore();
+frame();
+})();
+</script>
